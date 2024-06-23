@@ -1,0 +1,13 @@
+[package]
+name        = "x_file_system"
+version     = "0.1.0"
+edition     = "2021"
+default-run = "x_file_system"
+
+[[bin]]
+name = "my_bin1"
+
+[[bin]]
+name = "my_bin2"
+
+[dependencies]
