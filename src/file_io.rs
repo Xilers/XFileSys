@@ -1,7 +1,6 @@
 use std::fs::File;
 use std::io::{Error, Read, Seek, SeekFrom, Write};
 use std::path::Path;
-use std::sync::{Arc, Mutex};
 
 /// Copies a part of a file from the source path to the destination file.
 ///
@@ -18,18 +17,16 @@ use std::sync::{Arc, Mutex};
 ///
 pub fn copy_part(
     src_path: &Path,
-    dest_file: Arc<Mutex<File>>,
-    start: u64,
+    dest_file: &mut File,
+    src_start: u64,
     length: u64,
 ) -> std::io::Result<()> {
     let mut src_file = File::open(src_path)?;
-    src_file.seek(SeekFrom::Start(start))?;
+    src_file.seek(SeekFrom::Start(src_start))?;
 
     let mut buffer = vec![0; length as usize];
     src_file.read_exact(&mut buffer)?;
 
-    let mut dest_file = dest_file.lock().unwrap();
-    dest_file.seek(SeekFrom::Start(start))?;
     dest_file.write_all(&buffer)?;
 
     Ok(())
