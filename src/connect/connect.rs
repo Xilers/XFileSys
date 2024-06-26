@@ -21,6 +21,9 @@ pub fn connect() -> TcpStream {
 }
 
 pub fn send_device_spec(stream: &mut TcpStream) -> io::Result<()> {
+    /*
+     * Send own device spec to server
+     */
     let mut device_info = spec::get_system_info();
 
     let local_l3_info = IPv4 {
