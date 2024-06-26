@@ -1,13 +1,11 @@
 [package]
-name        = "x_file_system"
-version     = "0.1.0"
-edition     = "2021"
+name = "x_file_system"
+version = "0.1.0"
+edition = "2021"
 default-run = "x_file_system"
 
-[[bin]]
-name = "my_bin1"
-
-[[bin]]
-name = "my_bin2"
-
 [dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sysinfo = "0.30.12"
+uuid = { version = "1.8.0", features = ["serde", "v4"] }
