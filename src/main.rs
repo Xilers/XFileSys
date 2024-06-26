@@ -1,15 +1,20 @@
-mod file_io;
+mod connect;
+mod device;
+mod file;
 mod threadpool;
 
-use file_io::{copy_part, create_file, read_file};
+use file::file_io::{copy_part, create_file, read_file};
 use std::fs::{remove_file, File};
 use std::path::Path;
 use std::time;
 
-/// @@ TODO:
-/// -
+/// @@ TODO: use Thread for connect
 fn main() {
-    benchmark_file_io_perf();
+    let mut tcp_stream = connect::connect::connect();
+    match connect::connect::send_device_spec(&mut tcp_stream) {
+        Ok(_) => println!("Device spec sent successfully"),
+        Err(e) => eprintln!("Failed to send device spec: {}", e),
+    }
 }
 
 fn benchmark_file_io_perf() {
