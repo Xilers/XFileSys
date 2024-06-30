@@ -2,9 +2,9 @@ mod connect;
 mod device;
 mod file;
 mod threadpool;
+mod utils;
 
 use file::file_io::{copy_part, create_file, read_file};
-use signal_hook::{consts::SIGINT, iterator::Signals};
 use threadpool::Message;
 
 use std::fs::{remove_file, File};
@@ -15,26 +15,20 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{thread, time};
+use utils::register_sig_handler;
 
 /// @@ TODO: use Thread for connect
 fn main() {
     run_loopback_server();
 }
 
-fn register_sig_handler<F>(f: F)
-where
-    F: Send + 'static + Fn(),
-{
-    let mut signals =
-        Signals::new(&[SIGINT]).expect("Failed to register signal handler: SIGINT register failed");
-    thread::spawn(move || {
-        for sig in signals.forever() {
-            println!("Received signal {:?}", sig);
-            f();
-        }
-    });
-}
-
+/// Handle connection for both send and receive over TcpStream
+///
+/// # Arguments
+///
+/// * `stream` - TcpStream for connection
+/// * `rx` - Receiver for shutdown signal
+///
 fn handle_connection(mut stream: TcpStream, rx: Receiver<threadpool::Message>) {
     stream
         .set_read_timeout(Some(Duration::from_millis(100)))
@@ -56,15 +50,15 @@ fn handle_connection(mut stream: TcpStream, rx: Receiver<threadpool::Message>) {
         // let mut buf: [u8; 1024] = [0; 1024];
         let recv_len = stream.read(&mut buf).unwrap_or_else(|_| 0);
         if recv_len == 0 {
-            thread::sleep(Duration::from_millis(2000));
+            thread::sleep(Duration::from_millis(100));
             continue;
         }
         let msg = String::from_utf8_lossy(&buf[..(recv_len - 1)]).to_string();
-        let msg = format!("loopback from server: \"{}\"", msg);
         println!("#{:5}: {}", client_id, msg);
+        let msg = format!("loopback from server: \"{}\"", msg);
         stream.write(msg.as_bytes()).unwrap();
         stream.flush().unwrap();
-        thread::sleep(Duration::from_millis(2000));
+        thread::sleep(Duration::from_millis(100));
     }
 }
 
