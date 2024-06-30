@@ -4,17 +4,113 @@ mod file;
 mod threadpool;
 
 use file::file_io::{copy_part, create_file, read_file};
+use signal_hook::{consts::SIGINT, iterator::Signals};
+use threadpool::Message;
+
 use std::fs::{remove_file, File};
+use std::io::prelude::*;
+use std::net::{TcpListener, TcpStream};
 use std::path::Path;
-use std::time;
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use std::{thread, time};
 
 /// @@ TODO: use Thread for connect
 fn main() {
-    let mut tcp_stream = connect::connect::connect();
-    match connect::connect::send_device_spec(&mut tcp_stream) {
-        Ok(_) => println!("Device spec sent successfully"),
-        Err(e) => eprintln!("Failed to send device spec: {}", e),
+    run_loopback_server();
+}
+
+fn register_sig_handler<F>(f: F)
+where
+    F: Send + 'static + Fn(),
+{
+    let mut signals =
+        Signals::new(&[SIGINT]).expect("Failed to register signal handler: SIGINT register failed");
+    thread::spawn(move || {
+        for sig in signals.forever() {
+            println!("Received signal {:?}", sig);
+            f();
+        }
+    });
+}
+
+fn handle_connection(mut stream: TcpStream, rx: Receiver<threadpool::Message>) {
+    stream
+        .set_read_timeout(Some(Duration::from_millis(100)))
+        .expect("Failed to set read timeout");
+    println!("Source Address: {}", (&stream).peer_addr().unwrap());
+    let client_id = (&stream).peer_addr().unwrap().port();
+    loop {
+        match rx.try_recv() {
+            Ok(msg) => match msg {
+                threadpool::Message::Terminate => {
+                    println!("Terminate received.");
+                    break;
+                }
+                _ => (),
+            },
+            Err(_) => {}
+        }
+        let mut buf: Vec<u8> = vec![0; 1024];
+        // let mut buf: [u8; 1024] = [0; 1024];
+        let recv_len = stream.read(&mut buf).unwrap_or_else(|_| 0);
+        if recv_len == 0 {
+            thread::sleep(Duration::from_millis(2000));
+            continue;
+        }
+        let msg = String::from_utf8_lossy(&buf[..(recv_len - 1)]).to_string();
+        let msg = format!("loopback from server: \"{}\"", msg);
+        println!("#{:5}: {}", client_id, msg);
+        stream.write(msg.as_bytes()).unwrap();
+        stream.flush().unwrap();
+        thread::sleep(Duration::from_millis(2000));
     }
+}
+
+fn run_loopback_server() {
+    const ADDRESS: &str = "127.0.0.1:8080";
+    let listener = TcpListener::bind(ADDRESS).unwrap();
+    println!("Server listening on {}", ADDRESS);
+    let pool = threadpool::ThreadPool::new(4);
+    let pool = Arc::new(Mutex::new(pool));
+    let pool_clone = Arc::clone(&pool);
+    let term_tx_list = Arc::new(Mutex::new(Vec::<Sender<Message>>::new()));
+    let term_tx_list_clone: Arc<Mutex<Vec<Sender<Message>>>> = Arc::clone(&term_tx_list);
+    register_sig_handler(move || {
+        println!("Shutting down Threadpool on signal.");
+        for tx in term_tx_list_clone.lock().unwrap().iter() {
+            tx.send(threadpool::Message::Terminate).unwrap();
+        }
+        match pool_clone.try_lock() {
+            Ok(mut pool) => {
+                println!("Threadpool Joining....");
+                pool.join();
+                println!("Threadpool Joined!");
+            }
+            Err(_) => {
+                println!("Failed to aquire lock for threadpool. Unsafe Exiting..");
+            }
+        };
+        std::process::exit(0);
+    });
+
+    for stream in listener.incoming() {
+        match stream {
+            Ok(stream) => {
+                let (tx, rx) = mpsc::channel();
+                term_tx_list.lock().unwrap().push(tx);
+                pool.lock().unwrap().execute(|| {
+                    handle_connection(stream, rx);
+                });
+            }
+            Err(e) => {
+                eprintln!("Connection failed: {}", e);
+            }
+        }
+    }
+
+    println!("Shutting down.");
 }
 
 fn benchmark_file_io_perf() {

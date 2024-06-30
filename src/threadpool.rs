@@ -18,7 +18,7 @@ impl<F: FnOnce()> FnBox for F {
     }
 }
 
-enum Message {
+pub enum Message {
     NewJob(Job),
     Terminate,
 }
@@ -67,7 +67,11 @@ impl ThreadPool {
     /// WIP :
     /// Wait for all threads to finish.
     pub fn join(&mut self) {
+        for _ in &mut self.workers {
+            self.sender.send(Message::Terminate).unwrap();
+        }
         for worker in &mut self.workers {
+            println!("Shutting down worker {}", worker.id);
             if let Some(thread) = worker.thread.take() {
                 thread.join().unwrap();
             }
