@@ -1,12 +1,14 @@
 mod connect;
 mod device;
 mod file;
+mod packet;
 mod threadpool;
 mod utils;
 
 use file::file_io::{copy_part, create_file, read_file};
 use threadpool::Message;
 
+use packet::MsgPacket;
 use std::fs::{remove_file, File};
 use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
@@ -17,7 +19,6 @@ use std::time::Duration;
 use std::{thread, time};
 use utils::register_sig_handler;
 
-/// @@ TODO: use Thread for connect
 fn main() {
     run_loopback_server();
 }
@@ -40,6 +41,9 @@ fn handle_connection(mut stream: TcpStream, rx: Receiver<threadpool::Message>) {
             Ok(msg) => match msg {
                 threadpool::Message::Terminate => {
                     println!("Terminate received.");
+                    stream
+                        .shutdown(std::net::Shutdown::Both)
+                        .unwrap_or_else(|_| eprintln!("Failed to shutdown stream."));
                     break;
                 }
                 _ => (),
@@ -47,15 +51,23 @@ fn handle_connection(mut stream: TcpStream, rx: Receiver<threadpool::Message>) {
             Err(_) => {}
         }
         let mut buf: Vec<u8> = vec![0; 1024];
-        // let mut buf: [u8; 1024] = [0; 1024];
         let recv_len = stream.read(&mut buf).unwrap_or_else(|_| 0);
         if recv_len == 0 {
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(Duration::from_millis(10));
             continue;
         }
-        let msg = String::from_utf8_lossy(&buf[..(recv_len - 1)]).to_string();
-        println!("#{:5}: {}", client_id, msg);
-        let msg = format!("loopback from server: \"{}\"", msg);
+
+        let mut msg = String::new();
+        match serde_json::from_slice::<MsgPacket>(&buf) {
+            Ok(packet) => {
+                println!("#{:5}(msg): {}", client_id, packet.data);
+                msg = packet.data;
+            }
+            Err(_) => {
+                msg = String::from_utf8_lossy(&buf[..(recv_len)]).to_string();
+                println!("#{:5}(str): {}", client_id, msg);
+            }
+        }
         stream.write(msg.as_bytes()).unwrap();
         stream.flush().unwrap();
         thread::sleep(Duration::from_millis(100));
