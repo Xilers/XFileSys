@@ -58,18 +58,22 @@ fn handle_connection(mut stream: TcpStream, rx: Receiver<threadpool::Message>) {
         }
 
         let mut msg = String::new();
-        match serde_json::from_slice::<MsgPacket>(&buf) {
+        match serde_json::from_slice::<MsgPacket>(&buf[..recv_len]) {
             Ok(packet) => {
-                println!("#{:5}(msg): {}", client_id, packet.data);
-                msg = packet.data;
+                println!("#{:>5}(msg): {}", packet.id, packet.data);
+                // msg = &packet.data;
+                let msg = serde_json::to_vec(&packet).unwrap();
+                stream.write(&msg).unwrap();
+                stream.flush().unwrap();
             }
             Err(_) => {
                 msg = String::from_utf8_lossy(&buf[..(recv_len)]).to_string();
-                println!("#{:5}(str): {}", client_id, msg);
+                println!("#{:>5}(str): {}", client_id, msg);
+                stream.write(msg.as_bytes()).unwrap();
+                stream.flush().unwrap();
             }
         }
-        stream.write(msg.as_bytes()).unwrap();
-        stream.flush().unwrap();
+
         thread::sleep(Duration::from_millis(100));
     }
 }
